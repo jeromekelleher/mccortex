@@ -7,7 +7,7 @@
 #include "string_buffer/string_buffer.h"
 
 // Whether to overwrite files without warning (default: false)
-bool futil_get_force();
+bool futil_get_force(void);
 void futil_set_force(bool f);
 
 /**

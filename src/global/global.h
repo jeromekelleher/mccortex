@@ -3,7 +3,9 @@
 
 // request decent POSIX version
 #define _XOPEN_SOURCE 700
+#ifndef _BSD_SOURCE
 #define _BSD_SOURCE
+#endif
 // #define _GNU_SOURCE
 
 #include <stdlib.h>
@@ -49,8 +51,8 @@
 //
 // Setup / clear up of library functions
 //
-void cortex_init();
-void cortex_destroy();
+void cortex_init(void);
+void cortex_destroy(void);
 
 //
 // Common MACROs

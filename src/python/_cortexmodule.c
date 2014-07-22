@@ -1,6 +1,18 @@
 #include <Python.h>
 #include <structmember.h>
 
+#include "global.h"
+#include "commands.h"
+#include "util.h"
+#include "file_util.h"
+#include "db_graph.h"
+#include "assemble_contigs.h"
+#include "seq_reader.h"
+#include "graph_format.h"
+#include "gpath_reader.h"
+#include "gpath_checks.h"
+
+
 #if PY_MAJOR_VERSION >= 3
 #define IS_PY3K
 #endif

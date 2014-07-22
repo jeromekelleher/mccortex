@@ -2,7 +2,7 @@
 #define ASSEMBLE_CONTIGS_H_
 
 #include "db_graph.h"
-#include "seq_file.h"
+#include "seq_file/seq_file.h"
 
 #define AC_MAX_PATHS 5
 
