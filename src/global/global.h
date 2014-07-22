@@ -51,8 +51,8 @@
 //
 // Setup / clear up of library functions
 //
-void cortex_init(void);
-void cortex_destroy(void);
+void cortex_init();
+void cortex_destroy();
 
 //
 // Common MACROs

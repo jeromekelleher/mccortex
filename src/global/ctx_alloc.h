@@ -34,7 +34,7 @@ void* alloc_recallocarray(void *ptr, size_t oldnel, size_t newnel, size_t elsize
 void alloc_free(void *ptr);
 
 // Get number of allocations / frees
-size_t alloc_get_num_allocs(void);
-size_t alloc_get_num_frees(void);
+size_t alloc_get_num_allocs();
+size_t alloc_get_num_frees();
 
 #endif /* CTX_ALLOC_H_ */

@@ -2,7 +2,7 @@
 #define SEQ_READER_H_
 
 #include <inttypes.h>
-#include "seq_file/seq_file.h"
+#include "seq_file.h"
 #include "cortex_types.h"
 
 extern const char *MP_DIR_STRS[];

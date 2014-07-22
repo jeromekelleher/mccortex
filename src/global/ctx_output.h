@@ -37,8 +37,8 @@ void print_usage(const char *msg, const char *errfmt,  ...)
   __attribute__((noreturn))
   __attribute__((format(printf, 2, 3)));
 
-void ctx_output_init(void);
-void ctx_output_destroy(void);
+void ctx_output_init();
+void ctx_output_destroy();
 
 // Print progress every 5M reads
 #define CTX_UPDATE_REPORT_RATE 5000000

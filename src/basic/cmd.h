@@ -3,7 +3,7 @@
 
 #include <getopt.h> // struct option
 
-#include "seq_file/seq_file.h"
+#include "seq_file.h"
 
 // Constants
 
@@ -17,18 +17,18 @@
 // cmd line storing
 
 void cmd_init(int argc, char **argv);
-void cmd_destroy(void);
+void cmd_destroy();
 
 void cmd_set_usage(const char *usage);
-const char* cmd_get_usage(void);
-const char* cmd_get_cmdline(void);
-const char* cmd_get_cwd(void);
+const char* cmd_get_usage();
+const char* cmd_get_cmdline();
+const char* cmd_get_cwd();
 
 // Print status updates:
 // [cmd] ...
 // [cwd] ...
 // [version] ...
-void cmd_print_status_header(void);
+void cmd_print_status_header();
 
 //
 // General argument parsing
