@@ -10,5 +10,5 @@ ext2: ${SRC}
 	python setup.py build_ext --inplace
 
 ctags:
-	ctags *.c *.py test/*.py
+	ctags -R ../../
 

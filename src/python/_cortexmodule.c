@@ -24,6 +24,7 @@ static PyObject *CortexError;
 
 typedef struct {
     PyObject_HEAD
+    dBGraph db_graph;
 } Graph;
 
 
@@ -39,9 +40,15 @@ Graph_init(Graph *self, PyObject *args, PyObject *kwds)
 {
     int ret = -1;
     static char *kwlist[] = {NULL};
+    size_t kmer_size, ncols;
+    uint64_t kmers_in_hash;
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "", kwlist)) {
         goto out;
     }
+    kmer_size = 31;
+    ncols = 1;
+    kmers_in_hash = 10000;
+    db_graph_alloc(&self->db_graph, kmer_size, ncols, ncols, kmers_in_hash);
     ret = 0;
 out:
     return ret;
