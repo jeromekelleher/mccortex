@@ -27,31 +27,58 @@ typedef struct {
     dBGraph db_graph;
 } Graph;
 
-
 static void
 Graph_dealloc(Graph* self)
 {
+    db_graph_dealloc(&self->db_graph);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
-
 
 static int
 Graph_init(Graph *self, PyObject *args, PyObject *kwds)
 {
     int ret = -1;
-    static char *kwlist[] = {NULL};
-    size_t kmer_size, ncols;
-    uint64_t kmers_in_hash;
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "", kwlist)) {
+    static char *kwlist[] = {"kmer_size", "num_cols", "num_edge_cols", 
+            "capacity", NULL};
+    unsigned int kmer_size, num_cols, num_edge_cols;
+    unsigned long long capacity;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "IIIK", kwlist, 
+                &kmer_size, &num_cols, &num_edge_cols, &capacity)) {
         goto out;
     }
-    kmer_size = 31;
-    ncols = 1;
-    kmers_in_hash = 10000;
-    db_graph_alloc(&self->db_graph, kmer_size, ncols, ncols, kmers_in_hash);
+    /* We need to either check for sanity of values here or change
+     * the API to return an error when bad values are passed.
+     */
+    db_graph_alloc(&self->db_graph, (size_t) kmer_size, (size_t) num_cols, 
+            (size_t) num_edge_cols, (uint64_t) capacity);
     ret = 0;
 out:
     return ret;
+}
+
+static PyObject *
+Graph_get_kmer_size(Graph *self)
+{
+    return Py_BuildValue("I", (unsigned int) self->db_graph.kmer_size); 
+}
+
+static PyObject *
+Graph_get_num_cols(Graph *self)
+{
+    return Py_BuildValue("I", (unsigned int) self->db_graph.num_of_cols); 
+}
+
+static PyObject *
+Graph_get_num_edge_cols(Graph *self)
+{
+    return Py_BuildValue("I", (unsigned int) self->db_graph.num_edge_cols); 
+}
+
+static PyObject *
+Graph_get_capacity(Graph *self)
+{
+    return Py_BuildValue("K", (unsigned long long) self->db_graph.ht.capacity); 
 }
 
 static PyMemberDef Graph_members[] = {
@@ -59,6 +86,14 @@ static PyMemberDef Graph_members[] = {
 };
 
 static PyMethodDef Graph_methods[] = {
+    {"get_kmer_size", (PyCFunction) Graph_get_kmer_size, METH_NOARGS, 
+            "Returns the kmer size" },
+    {"get_num_cols", (PyCFunction) Graph_get_num_cols, METH_NOARGS, 
+            "Returns the number of colours in the graph." },
+    {"get_num_edge_cols", (PyCFunction) Graph_get_num_edge_cols, METH_NOARGS, 
+            "Returns the number of edge colours in the graph." },
+    {"get_capacity", (PyCFunction) Graph_get_capacity, METH_NOARGS, 
+            "Returns the capacity of the graph's hash table." },
     {NULL}  /* Sentinel */
 };
 
