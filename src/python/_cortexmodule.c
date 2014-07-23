@@ -27,6 +27,19 @@ typedef struct {
     dBGraph db_graph;
 } Graph;
 
+typedef struct {
+    PyObject_HEAD
+    Graph *graph;
+    uint64_t index;
+    char *buffer;
+} KmerIterator;
+
+/**********************************************************
+ *
+ * Graph object 
+ *
+ **********************************************************/
+
 static void
 Graph_dealloc(Graph* self)
 {
@@ -115,7 +128,7 @@ static PyMethodDef Graph_methods[] = {
 
 static PyTypeObject GraphType = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    "_wormtable.Graph",             /* tp_name */
+    "_cortex.Graph",             /* tp_name */
     sizeof(Graph),             /* tp_basicsize */
     0,                         /* tp_itemsize */
     (destructor)Graph_dealloc, /* tp_dealloc */
@@ -153,7 +166,113 @@ static PyTypeObject GraphType = {
     (initproc)Graph_init,      /* tp_init */
 };
    
+/**********************************************************
+ *
+ * KmerIterator object 
+ *
+ **********************************************************/
 
+static void
+KmerIterator_dealloc(KmerIterator* self)
+{
+    PyMem_Free(self->buffer);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static int
+KmerIterator_init(KmerIterator *self, PyObject *args, PyObject *kwds)
+{
+    int ret = -1;
+    static char *kwlist[] = {"graph", NULL};
+    Graph *g; 
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O!", kwlist, 
+                &GraphType, &g)) {
+        goto out;
+    }
+    self->graph = g;
+    self->index = 0;
+    self->buffer = PyMem_Malloc(self->graph->db_graph.kmer_size + 1);
+    if (self->buffer == NULL) {
+        PyErr_NoMemory();
+        goto out;
+    }
+    ret = 0;
+out:
+    return ret;
+}
+
+static PyObject *
+KmerIterator_next(KmerIterator *self)
+{
+    PyObject *ret = NULL;
+    BinaryKmer kmer;
+    HashTable *hash_table = &self->graph->db_graph.ht;
+    size_t k = self->graph->db_graph.kmer_size;
+    char *str = self->buffer; 
+    while (ret == NULL && self->index < hash_table->capacity) {
+        kmer = hash_table->table[self->index];
+        if (HASH_ENTRY_ASSIGNED(kmer)) {
+            binary_kmer_to_str(kmer, k, str);
+            ret = Py_BuildValue("s", str);
+            if (ret == NULL) {
+                goto out;
+            }
+        }
+        self->index++;
+    }
+out:
+    return ret;
+}
+
+static PyMemberDef KmerIterator_members[] = {
+    {NULL}  /* Sentinel */
+};
+
+static PyMethodDef KmerIterator_methods[] = {
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject KmerIteratorType = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "_cortex.KmerIterator",             /* tp_name */
+    sizeof(KmerIterator),             /* tp_basicsize */
+    0,                         /* tp_itemsize */
+    (destructor)KmerIterator_dealloc, /* tp_dealloc */
+    0,                         /* tp_print */
+    0,                         /* tp_getattr */
+    0,                         /* tp_setattr */
+    0,                         /* tp_reserved */
+    0,                         /* tp_repr */
+    0,                         /* tp_as_number */
+    0,                         /* tp_as_sequence */
+    0,                         /* tp_as_mapping */
+    0,                         /* tp_hash  */
+    0,                         /* tp_call */
+    0,                         /* tp_str */
+    0,                         /* tp_getattro */
+    0,                         /* tp_setattro */
+    0,                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT |
+        Py_TPFLAGS_BASETYPE,   /* tp_flags */
+    "KmerIterator objects",           /* tp_doc */
+    0,                     /* tp_traverse */
+    0,                     /* tp_clear */
+    0,                     /* tp_richcompare */
+    0,                     /* tp_weaklistoffset */
+    PyObject_SelfIter,               /* tp_iter */
+    (iternextfunc) KmerIterator_next, /* tp_iternext */
+    KmerIterator_methods,             /* tp_methods */
+    KmerIterator_members,             /* tp_members */
+    0,                         /* tp_getset */
+    0,                         /* tp_base */
+    0,                         /* tp_dict */
+    0,                         /* tp_descr_get */
+    0,                         /* tp_descr_set */
+    0,                         /* tp_dictoffset */
+    (initproc)KmerIterator_init,      /* tp_init */
+};
+ 
 
 /* Initialisation code supports Python 2.x and 3.x. The framework uses the 
  * recommended structure from http://docs.python.org/howto/cporting.html. 
@@ -198,6 +317,13 @@ init_cortex(void)
     }
     Py_INCREF(&GraphType);
     PyModule_AddObject(module, "Graph", (PyObject *) &GraphType);
+    /* KmerIterator */
+    KmerIteratorType.tp_new = PyType_GenericNew;
+    if (PyType_Ready(&KmerIteratorType) < 0) {
+        INITERROR;
+    }
+    Py_INCREF(&KmerIteratorType);
+    PyModule_AddObject(module, "KmerIterator", (PyObject *) &KmerIteratorType);
 
     CortexError = PyErr_NewException("_cortex.CortexError", 
             NULL, NULL);
