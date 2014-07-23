@@ -38,20 +38,36 @@ static int
 Graph_init(Graph *self, PyObject *args, PyObject *kwds)
 {
     int ret = -1;
-    static char *kwlist[] = {"kmer_size", "num_cols", "num_edge_cols", 
-            "capacity", NULL};
-    unsigned int kmer_size, num_cols, num_edge_cols;
-    unsigned long long capacity;
+    static char *kwlist[] = {"path", NULL};
+    char *path;
+    int64_t nkmers;
+    GraphFileReader gfile;
+    LoadingStats stats = LOAD_STATS_INIT_MACRO;
+    GraphLoadingPrefs gprefs = {.db_graph = &self->db_graph,
+        .boolean_covgs = false,
+        .must_exist_in_graph = false,
+        .must_exist_in_edges = NULL,
+        .empty_colours = false
+    };
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "IIIK", kwlist, 
-                &kmer_size, &num_cols, &num_edge_cols, &capacity)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s", kwlist, &path)) {
         goto out;
     }
-    /* We need to either check for sanity of values here or change
-     * the API to return an error when bad values are passed.
-     */
-    db_graph_alloc(&self->db_graph, (size_t) kmer_size, (size_t) num_cols, 
-            (size_t) num_edge_cols, (uint64_t) capacity);
+    memset(&gfile, 0, sizeof(gfile));
+    if (graph_file_open(&gfile, path) != 1) {
+        /* Note that here we have not allocated the db_graph object yet
+         * and so we need to put in a flag to detect this. However,
+         * all errors result in an abort at the moment, so we can't 
+         * do this properly anyway.
+         */
+        PyErr_SetString(CortexError, "Error opening file");
+        goto out;
+    }
+    nkmers = graph_file_nkmers(&gfile);
+    db_graph_alloc(&self->db_graph, gfile.hdr.kmer_size, gfile.hdr.num_of_cols, 
+            gfile.hdr.num_of_cols, 2 * nkmers);
+    graph_load(&gfile, gprefs, &stats);
+    graph_file_close(&gfile);
     ret = 0;
 out:
     return ret;
