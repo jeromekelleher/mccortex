@@ -2,16 +2,8 @@
 #include <structmember.h>
 
 #include "global.h"
-#include "commands.h"
-#include "util.h"
-#include "file_util.h"
 #include "db_graph.h"
-#include "assemble_contigs.h"
-#include "seq_reader.h"
 #include "graph_format.h"
-#include "gpath_reader.h"
-#include "gpath_checks.h"
-
 
 #if PY_MAJOR_VERSION >= 3
 #define IS_PY3K
@@ -25,13 +17,14 @@ static PyObject *CortexError;
 typedef struct {
     PyObject_HEAD
     dBGraph db_graph;
+    char *kmer_buffer;
 } Graph;
 
 typedef struct {
     PyObject_HEAD
     Graph *graph;
     uint64_t index;
-    char *buffer;
+    char *kmer_buffer;
 } KmerIterator;
 
 /**********************************************************
@@ -44,6 +37,7 @@ static void
 Graph_dealloc(Graph* self)
 {
     db_graph_dealloc(&self->db_graph);
+    PyMem_Free(self->kmer_buffer);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
@@ -54,6 +48,7 @@ Graph_init(Graph *self, PyObject *args, PyObject *kwds)
     static char *kwlist[] = {"path", NULL};
     char *path;
     int64_t nkmers;
+    size_t hash_table_size, num_colours;
     GraphFileReader gfile;
     LoadingStats stats = LOAD_STATS_INIT_MACRO;
     GraphLoadingPrefs gprefs = {.db_graph = &self->db_graph,
@@ -77,10 +72,23 @@ Graph_init(Graph *self, PyObject *args, PyObject *kwds)
         goto out;
     }
     nkmers = graph_file_nkmers(&gfile);
-    db_graph_alloc(&self->db_graph, gfile.hdr.kmer_size, gfile.hdr.num_of_cols, 
-            gfile.hdr.num_of_cols, 2 * nkmers);
+    hash_table_size = 2 * nkmers;
+    num_colours = gfile.hdr.num_of_cols;
+    db_graph_alloc(&self->db_graph, gfile.hdr.kmer_size, num_colours, 
+            num_colours, hash_table_size);
+    /* we still need to calloc some internal structures here... */
+    self->db_graph.col_edges = ctx_calloc(self->db_graph.ht.capacity 
+            * num_colours, sizeof(Edges));
+    self->db_graph.col_covgs = ctx_calloc(self->db_graph.ht.capacity 
+            * num_colours, sizeof(Covg));
     graph_load(&gfile, gprefs, &stats);
     graph_file_close(&gfile);
+    /* allocate the kmer buffer */ 
+    self->kmer_buffer = PyMem_Malloc(self->db_graph.kmer_size + 1);
+    if (self->kmer_buffer == NULL) {
+        PyErr_NoMemory();
+        goto out;
+    }
     ret = 0;
 out:
     return ret;
@@ -110,11 +118,63 @@ Graph_get_capacity(Graph *self)
     return Py_BuildValue("K", (unsigned long long) self->db_graph.ht.capacity); 
 }
 
+static PyObject *
+Graph_get_next_nodes(Graph *self, PyObject *args)
+{
+    PyObject *ret = NULL;
+    PyObject *t = NULL;
+    PyObject *value;
+    dBGraph *dbg = &self->db_graph; 
+    dBNode node, next_nodes[4];
+    Nucleotide fw_nucs[4];
+    uint8_t j, num_neighbours;
+    char *input_kmer;
+    char *output_kmer = self->kmer_buffer;
+    int colour;
+
+    if (!PyArg_ParseTuple(args, "si", &input_kmer, &colour)) {
+        goto out;
+    }
+    node = db_graph_find_str(dbg, input_kmer); 
+    if (node.key == HASH_NOT_FOUND) {
+        PyErr_SetString(CortexError, "kmer not found");
+        goto out;
+    }
+    num_neighbours = db_graph_next_nodes_in_col(dbg, node, colour,
+            next_nodes, fw_nucs);
+    /* can we find out if the colour was not present? */
+    t = PyTuple_New((size_t) num_neighbours);
+    if (t == NULL) {
+        PyErr_NoMemory();
+        goto out;
+    }
+    for (j = 0; j < num_neighbours; j++) {
+        //BinaryKmer bkmer = db_node_get_bkmer(dbg, next_nodes[j].key);
+        // We'd like to use db_node_get_bkmer, but when we include
+        // db_node.h we get a compile error somewhere in the macros
+        BinaryKmer bkmer = dbg->ht.table[next_nodes[j].key];
+        binary_kmer_to_str(bkmer, dbg->kmer_size, output_kmer);
+        value = Py_BuildValue("s", output_kmer); 
+        if (value == NULL) {
+            Py_DECREF(t);
+            goto out;
+        }
+        PyTuple_SET_ITEM(t, j, value);
+    }
+    ret = t;
+out:
+    return ret; 
+}
+
+
 static PyMemberDef Graph_members[] = {
     {NULL}  /* Sentinel */
 };
 
 static PyMethodDef Graph_methods[] = {
+    {"get_next_nodes", (PyCFunction) Graph_get_next_nodes, METH_VARARGS, 
+            "Returns the kmers adjacent to the specified kmer in the a given "
+            "direction" },
     {"get_kmer_size", (PyCFunction) Graph_get_kmer_size, METH_NOARGS, 
             "Returns the kmer size" },
     {"get_num_cols", (PyCFunction) Graph_get_num_cols, METH_NOARGS, 
@@ -175,7 +235,7 @@ static PyTypeObject GraphType = {
 static void
 KmerIterator_dealloc(KmerIterator* self)
 {
-    PyMem_Free(self->buffer);
+    PyMem_Free(self->kmer_buffer);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
@@ -192,8 +252,8 @@ KmerIterator_init(KmerIterator *self, PyObject *args, PyObject *kwds)
     }
     self->graph = g;
     self->index = 0;
-    self->buffer = PyMem_Malloc(self->graph->db_graph.kmer_size + 1);
-    if (self->buffer == NULL) {
+    self->kmer_buffer = PyMem_Malloc(self->graph->db_graph.kmer_size + 1);
+    if (self->kmer_buffer == NULL) {
         PyErr_NoMemory();
         goto out;
     }
@@ -209,7 +269,7 @@ KmerIterator_next(KmerIterator *self)
     BinaryKmer kmer;
     HashTable *hash_table = &self->graph->db_graph.ht;
     size_t k = self->graph->db_graph.kmer_size;
-    char *str = self->buffer; 
+    char *str = self->kmer_buffer; 
     while (ret == NULL && self->index < hash_table->capacity) {
         kmer = hash_table->table[self->index];
         if (HASH_ENTRY_ASSIGNED(kmer)) {
