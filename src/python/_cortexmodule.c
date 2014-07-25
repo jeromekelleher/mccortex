@@ -3,6 +3,7 @@
 
 #include "global.h"
 #include "db_graph.h"
+#include "db_node.h"
 #include "graph_format.h"
 
 #if PY_MAJOR_VERSION >= 3
@@ -81,6 +82,8 @@ Graph_init(Graph *self, PyObject *args, PyObject *kwds)
             * num_colours, sizeof(Edges));
     self->db_graph.col_covgs = ctx_calloc(self->db_graph.ht.capacity 
             * num_colours, sizeof(Covg));
+    size_t bytes_per_col = roundup_bits2bytes(self->db_graph.ht.capacity);
+    self->db_graph.node_in_cols = ctx_calloc(bytes_per_col * num_colours, 1);
     graph_load(&gfile, gprefs, &stats);
     graph_file_close(&gfile);
     /* allocate the kmer buffer */ 
@@ -127,12 +130,13 @@ Graph_get_next_nodes(Graph *self, PyObject *args)
     dBGraph *dbg = &self->db_graph; 
     dBNode node, next_nodes[4];
     Nucleotide fw_nucs[4];
+    BinaryKmer bkmer;
     uint8_t j, num_neighbours;
     char *input_kmer;
     char *output_kmer = self->kmer_buffer;
-    int colour;
+    int colour = -1;
 
-    if (!PyArg_ParseTuple(args, "si", &input_kmer, &colour)) {
+    if (!PyArg_ParseTuple(args, "s|i", &input_kmer, &colour)) {
         goto out;
     }
     node = db_graph_find_str(dbg, input_kmer); 
@@ -149,10 +153,7 @@ Graph_get_next_nodes(Graph *self, PyObject *args)
         goto out;
     }
     for (j = 0; j < num_neighbours; j++) {
-        //BinaryKmer bkmer = db_node_get_bkmer(dbg, next_nodes[j].key);
-        // We'd like to use db_node_get_bkmer, but when we include
-        // db_node.h we get a compile error somewhere in the macros
-        BinaryKmer bkmer = dbg->ht.table[next_nodes[j].key];
+        bkmer = db_node_get_bkmer(dbg, next_nodes[j].key);
         binary_kmer_to_str(bkmer, dbg->kmer_size, output_kmer);
         value = Py_BuildValue("s", output_kmer); 
         if (value == NULL) {
@@ -166,12 +167,44 @@ out:
     return ret; 
 }
 
+static PyObject *
+Graph_contains_kmer(Graph *self, PyObject *args)
+{
+    PyObject *ret = NULL;
+    dBGraph *dbg = &self->db_graph; 
+    dBNode node;
+    char *input_kmer;
+    int colour = -1;
+
+    if (!PyArg_ParseTuple(args, "s|i", &input_kmer, &colour)) {
+        goto out;
+    }
+    node = db_graph_find_str(dbg, input_kmer); 
+    if (node.key == HASH_NOT_FOUND) {
+        ret = Py_False; 
+    } else {
+        ret = Py_True; 
+        if (colour != -1) {
+            if (!db_node_has_col(dbg, node.key, (size_t) colour)) {
+                ret = Py_False;
+            }
+        } 
+    }
+    Py_INCREF(ret);
+out:
+    return ret; 
+}
+
+
 
 static PyMemberDef Graph_members[] = {
     {NULL}  /* Sentinel */
 };
 
 static PyMethodDef Graph_methods[] = {
+    {"contains_kmer", (PyCFunction) Graph_contains_kmer, METH_VARARGS, 
+            "Returns True if the graph contains the specified kmer, optionally" 
+            "for a give colour." },
     {"get_next_nodes", (PyCFunction) Graph_get_next_nodes, METH_VARARGS, 
             "Returns the kmers adjacent to the specified kmer in the a given "
             "direction" },
